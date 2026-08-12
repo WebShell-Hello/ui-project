@@ -25,10 +25,17 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { InputGroup, InputGroupAddon, InputGroupInput } from "@/components/ui/input-group";
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
-import { AddContractDialog } from "./add-contract-dialog";
 import {
   type ContractClient,
   type ContractRecord,
@@ -38,10 +45,13 @@ import {
   getContractStatus,
 } from "./contract-data";
 import { ContractDetailsDialog } from "./contract-details-dialog";
+import { EmployeeContractsTable } from "./employee-contracts-table";
 
 const contractViews = ["client", "contract"] as const;
+const contractCategories = ["client", "employee"] as const;
 
 type ContractView = (typeof contractViews)[number];
+type ContractCategory = (typeof contractCategories)[number];
 
 const statusClasses: Record<ContractStatus, string> = {
   active:
@@ -57,6 +67,10 @@ const statusClasses: Record<ContractStatus, string> = {
 
 function isContractView(value: string): value is ContractView {
   return contractViews.includes(value as ContractView);
+}
+
+function isContractCategory(value: string): value is ContractCategory {
+  return contractCategories.includes(value as ContractCategory);
 }
 
 function formatStatus(status: ContractStatus) {
@@ -176,6 +190,7 @@ interface ContractVaultProps {
 }
 
 export function ContractVault({ initialContractId }: ContractVaultProps) {
+  const [contractCategory, setContractCategory] = React.useState<ContractCategory>("client");
   const [view, setView] = React.useState<ContractView>("client");
   const [searchQuery, setSearchQuery] = React.useState("");
   const [expandedClientIds, setExpandedClientIds] = React.useState<Set<string>>(() => new Set());
@@ -245,13 +260,37 @@ export function ContractVault({ initialContractId }: ContractVaultProps) {
         <div className="space-y-1">
           <h1 className="text-3xl leading-none tracking-tight">Contract Vault</h1>
           <p className="text-muted-foreground text-sm">
-            Manage client contracts and the rates used to generate invoices.
+            {contractCategory === "client"
+              ? "Manage client contracts and the rates used to generate invoices."
+              : "Manage employee agreements, terms, and employment records."}
           </p>
         </div>
-        <AddContractDialog />
+        <Select
+          value={contractCategory}
+          onValueChange={(value) => {
+            if (isContractCategory(value)) {
+              setContractCategory(value);
+              setSelectedContract(null);
+            }
+          }}
+        >
+          <SelectTrigger className="w-full sm:w-48" aria-label="Contract category">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent align="end">
+            <SelectGroup>
+              <SelectItem value="client">Client contracts</SelectItem>
+              <SelectItem value="employee">Employee contracts</SelectItem>
+            </SelectGroup>
+          </SelectContent>
+        </Select>
       </div>
 
-      <section className="flex flex-col gap-3" aria-labelledby="contracts-heading">
+      <section
+        className="flex flex-col gap-3"
+        aria-labelledby="contracts-heading"
+        hidden={contractCategory !== "client"}
+      >
         <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
           <Tabs
             value={view}
@@ -462,22 +501,26 @@ export function ContractVault({ initialContractId }: ContractVaultProps) {
         </Card>
       </section>
 
-      <ContractDetailsDialog
-        contract={selectedContract}
-        client={selectedContractClient}
-        status={selectedContractStatus}
-        open={selectedContract !== null}
-        onOpenChange={(open) => {
-          if (!open) {
-            setSelectedContract(null);
-          }
-        }}
-        onDownload={() => {
-          if (selectedContract) {
-            previewDownload(selectedContract);
-          }
-        }}
-      />
+      {contractCategory === "employee" && <EmployeeContractsTable />}
+
+      {contractCategory === "client" && (
+        <ContractDetailsDialog
+          contract={selectedContract}
+          client={selectedContractClient}
+          status={selectedContractStatus}
+          open={selectedContract !== null}
+          onOpenChange={(open) => {
+            if (!open) {
+              setSelectedContract(null);
+            }
+          }}
+          onDownload={() => {
+            if (selectedContract) {
+              previewDownload(selectedContract);
+            }
+          }}
+        />
+      )}
     </div>
   );
 }
