@@ -5,12 +5,13 @@ import {
   AUTH_MODE_COOKIE_NAME,
   AUTH_USERNAME_COOKIE_NAME,
 } from "@/lib/auth/auth.constants";
+import { readLocalTestUsers } from "@/lib/auth/local-test-users.server";
 import { AppSidebar } from "@/app/(main)/dashboard/_components/sidebar/app-sidebar";
 import { Separator } from "@/components/ui/separator";
 import { SidebarInset, SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { cn } from "@/lib/utils";
 import { getPreference } from "@/server/server-actions";
-import { testUsers } from "@/data/test_users";
+import { readModuleConfigurationFile } from "@/lib/module-configuration-file.server";
 import { AccountSwitcher } from "./_components/header/account-switcher";
 import { GitHubRepositoriesMenu } from "./_components/header/github-repositories-menu";
 import { LayoutControls } from "./_components/header/layout-controls";
@@ -42,7 +43,7 @@ export default async function Layout({ children }: Readonly<{ children: ReactNod
 
   const localUser =
     authMode === "mock"
-      ? testUsers.find((user) => user.id === currentUserId)
+      ? (await readLocalTestUsers()).find((user) => user.id === currentUserId)
       : undefined;
 
   const currentUser = {
@@ -56,10 +57,12 @@ export default async function Layout({ children }: Readonly<{ children: ReactNod
       "",
     avatar: "",
   };
-  const [variant, collapsible] = await Promise.all([
+  const [variant, collapsible, savedModules] = await Promise.all([
     getPreference("sidebar_variant"),
     getPreference("sidebar_collapsible"),
+    readModuleConfigurationFile(),
   ]);
+  const initialModules = savedModules;
 
   return (
     <SidebarProvider
@@ -76,6 +79,7 @@ export default async function Layout({ children }: Readonly<{ children: ReactNod
         collapsible={collapsible}
         role={role ?? "guest"}
         user={currentUser}
+        initialModules={initialModules}
       />
       <SidebarInset
         className={cn(
@@ -101,7 +105,7 @@ export default async function Layout({ children }: Readonly<{ children: ReactNod
                 orientation="vertical"
                 className="mx-2 data-[orientation=vertical]:h-4 data-[orientation=vertical]:self-center"
               />
-              <SearchDialog role={role ?? "guest"} />
+              <SearchDialog role={role ?? "guest"} initialModules={initialModules} />
             </div>
             <div className="flex items-center gap-2">
               <LayoutControls />

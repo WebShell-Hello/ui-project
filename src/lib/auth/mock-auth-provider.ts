@@ -1,15 +1,15 @@
-import { testUsers } from "@/data/test_users";
-
 import type {
   AuthCredentials,
   AuthSession,
 } from "./auth.types";
+import { readLocalTestUsers } from "./local-test-users.server";
 import { resolveAppRole } from "./resolve-app-role";
 
 export async function authenticateWithMock(
   credentials: AuthCredentials,
 ): Promise<AuthSession | null> {
   const normalizedUsername = credentials.username.trim().toLowerCase();
+  const testUsers = await readLocalTestUsers();
 
   const account = testUsers.find(
     (user) => user.username?.toLowerCase() === normalizedUsername,

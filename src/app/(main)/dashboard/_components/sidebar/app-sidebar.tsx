@@ -21,7 +21,8 @@ import {
   type AppRole,
 } from "@/lib/access-control/role-access.data";
 import { filterSidebarItems } from "@/navigation/sidebar/filter-sidebar-items";
-import { sidebarItems } from "@/navigation/sidebar/sidebar-items";
+import type { ModuleRecord } from "@/navigation/sidebar/module-configuration";
+import { useConfiguredSidebarItems } from "@/navigation/sidebar/use-configured-sidebar-items";
 import { usePreferencesStore } from "@/stores/preferences/preferences-provider";
 
 import { NavMain } from "./nav-main";
@@ -39,10 +40,12 @@ const roleLabels: Record<AppRole, string> = {
 interface AppSidebarProps extends React.ComponentProps<typeof Sidebar> {
   readonly role: AppRole;
   readonly user: NavUserData;
+  readonly initialModules?: ModuleRecord[] | null;
 }
 export function AppSidebar({
   role,
   user,
+  initialModules,
   ...props
 }: AppSidebarProps) {
   const { sidebarVariant, sidebarCollapsible, isSynced } = usePreferencesStore(
@@ -55,7 +58,8 @@ export function AppSidebar({
 
   const variant = isSynced ? sidebarVariant : props.variant;
   const collapsible = isSynced ? sidebarCollapsible : props.collapsible;
-  const permittedSidebarItems = filterSidebarItems(sidebarItems, role);
+  const configuredSidebarItems = useConfiguredSidebarItems(initialModules);
+  const permittedSidebarItems = filterSidebarItems(configuredSidebarItems, role);
   const homeUrl = roleHomeRoutes[role];
 
   return (

@@ -1,6 +1,7 @@
 import {
   Banknote,
   Calendar,
+  CarFront,
   ChartBar,
   CheckSquare,
   Fingerprint,
@@ -16,6 +17,7 @@ import {
   type LucideIcon,
   Mail,
   MessageSquare,
+  PanelsTopLeft,
   ReceiptText,
   Server,
   ShoppingBag,
@@ -65,7 +67,7 @@ export interface NavGroup {
 export const sidebarItems: NavGroup[] = [
   {
     id: 1,
-    label: "Dashboards",
+    label: "Pages",
     items: [
       {
         id: "default",
@@ -96,6 +98,42 @@ export const sidebarItems: NavGroup[] = [
         title: "Dashboard",
         url: "/dashboard/dashboard",
         icon: Gauge,
+      },
+      {
+        id: "driver-profiles",
+        title: "Driver Profiles",
+        url: "/dashboard/driver-profiles",
+        icon: Users,
+      },
+      {
+        id: "users-profiles",
+        title: "Users Profiles",
+        url: "/dashboard/users-profiles",
+        icon: Users,
+      },
+      {
+        id: "roles-management",
+        title: "Roles",
+        url: "/dashboard/roles-management",
+        icon: Lock,
+      },
+      {
+        id: "module-management",
+        title: "Web Module",
+        url: "/dashboard/module-management",
+        icon: PanelsTopLeft,
+      },
+      {
+        id: "vans",
+        title: "Vans",
+        url: "/dashboard/vans",
+        icon: CarFront,
+      },
+      {
+        id: "documents",
+        title: "Documents",
+        url: "/dashboard/documents",
+        icon: FolderOpen,
       },
       {
         id: "crm",
@@ -156,7 +194,7 @@ export const sidebarItems: NavGroup[] = [
   },
   {
     id: 2,
-    label: "Pages",
+    label: "Functions",
     items: [
       {
         id: "email",

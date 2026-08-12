@@ -12,6 +12,7 @@ export interface RoleAccess {
 }
 
 const authenticationRoutes = ["/auth/v1/login", "/auth/v1/register"] as const;
+const accountRoute = "/dashboard/account" as const;
 
 
 export const roleAccess: Record<AppRole, RoleAccess> = {
@@ -23,13 +24,14 @@ export const roleAccess: Record<AppRole, RoleAccess> = {
   },
   manager: {
     allowedRoutes: [
+      accountRoute,
       "/dashboard/timesheets",
       "/dashboard/invoices",
       ...authenticationRoutes,
     ],
   },
   guest: {
-    allowedRoutes: authenticationRoutes,
+    allowedRoutes: [accountRoute, ...authenticationRoutes],
   },
 };
 

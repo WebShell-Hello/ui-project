@@ -1,6 +1,7 @@
 "use client";
 
 import { BadgeCheck, Bell, CreditCard, LogOut } from "lucide-react";
+import Link from "next/link";
 
 import type { NavUserData } from "@/app/(main)/dashboard/_components/sidebar/nav-user";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -60,9 +61,11 @@ export function AccountSwitcher({ user }: { readonly user: NavUserData }) {
         <DropdownMenuSeparator />
 
         <DropdownMenuGroup>
-          <DropdownMenuItem>
-            <BadgeCheck />
-            Account
+          <DropdownMenuItem asChild>
+            <Link href="/dashboard/account">
+              <BadgeCheck />
+              Account
+            </Link>
           </DropdownMenuItem>
           <DropdownMenuItem>
             <CreditCard />

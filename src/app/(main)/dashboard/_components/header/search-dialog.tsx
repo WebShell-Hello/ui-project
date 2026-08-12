@@ -19,10 +19,11 @@ import {
   CommandSeparator,
 } from "@/components/ui/command";
 import {
-  sidebarItems,
   type NavGroup,
   type NavMainItem,
 } from "@/navigation/sidebar/sidebar-items";
+import { useConfiguredSidebarItems } from "@/navigation/sidebar/use-configured-sidebar-items";
+import type { ModuleRecord } from "@/navigation/sidebar/module-configuration";
 
 type SearchItem = {
   id: string;
@@ -93,22 +94,24 @@ function groupBy(items: SearchItem[]) {
 
 interface SearchDialogProps {
   readonly role: AppRole;
+  readonly initialModules?: ModuleRecord[] | null;
 }
   
-export function SearchDialog({ role }: SearchDialogProps) {
+export function SearchDialog({ role, initialModules }: SearchDialogProps) {
   const [open, setOpen] = React.useState(false);
   const [query, setQuery] = React.useState("");
   const router = useRouter();
+  const configuredSidebarItems = useConfiguredSidebarItems(initialModules);
 
   const { searchItems, recommendations } = React.useMemo(() => {
-    const permittedGroups = filterSidebarItems(sidebarItems, role);
+    const permittedGroups = filterSidebarItems(configuredSidebarItems, role);
     const permittedSearchItems = createSearchItems(permittedGroups);
 
     return {
       searchItems: permittedSearchItems,
       recommendations: getAvailableItems(permittedSearchItems),
     };
-  }, [role]);
+  }, [configuredSidebarItems, role]);
 
   React.useEffect(() => {
     const down = (e: KeyboardEvent) => {

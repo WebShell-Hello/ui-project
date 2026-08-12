@@ -171,11 +171,17 @@ function ContractRow({
   );
 }
 
-export function ContractVault() {
+interface ContractVaultProps {
+  initialContractId?: string;
+}
+
+export function ContractVault({ initialContractId }: ContractVaultProps) {
   const [view, setView] = React.useState<ContractView>("client");
   const [searchQuery, setSearchQuery] = React.useState("");
   const [expandedClientIds, setExpandedClientIds] = React.useState<Set<string>>(() => new Set());
-  const [selectedContract, setSelectedContract] = React.useState<ContractRecord | null>(null);
+  const [selectedContract, setSelectedContract] = React.useState<ContractRecord | null>(
+    () => contractTestData.find((contract) => contract.id === initialContractId) ?? null,
+  );
   const [pageSize, setPageSize] = React.useState(10);
   const [pageIndex, setPageIndex] = React.useState(0);
 
