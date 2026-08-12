@@ -274,7 +274,7 @@ export function ContractVault({ initialContractId }: ContractVaultProps) {
             }
           }}
         >
-          <SelectTrigger className="w-full sm:w-48" aria-label="Contract category">
+          <SelectTrigger className="w-48 self-end" aria-label="Contract category">
             <SelectValue />
           </SelectTrigger>
           <SelectContent align="end">
