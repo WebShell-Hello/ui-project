@@ -1,0 +1,19 @@
+{
+  "name": "Studio Admin - Node 22",
+  "build": {
+    "dockerfile": "../Dockerfile",
+    "context": ".."
+  },
+  "forwardPorts": [3000],
+  "portsAttributes": {
+    "3000": {
+      "label": "Studio Admin",
+      "onAutoForward": "notify",
+      "protocol": "http"
+    }
+  },
+  "postCreateCommand": "npm ci",
+  "containerEnv": {
+    "NEXT_TELEMETRY_DISABLED": "1"
+  }
+}
