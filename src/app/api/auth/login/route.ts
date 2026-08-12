@@ -40,6 +40,9 @@ const baseCookieOptions = {
   path: "/",
 };
 
+const defaultSessionMaxAge = 60 * 60;
+const rememberedSessionMaxAge = 60 * 60 * 24 * 7;
+
 function expireCookie(
   response: NextResponse,
   name: string,
@@ -56,12 +59,9 @@ function setSessionCookies(
   authMode: AuthMode,
   remember: boolean,
 ) {
-  const sessionMaxAge =
-    authMode === "api"
-      ? 60 * 60
-      : remember
-        ? 60 * 60 * 24 * 30
-        : 60 * 60;
+  const sessionMaxAge = remember
+    ? rememberedSessionMaxAge
+    : defaultSessionMaxAge;
 
   response.cookies.set(
     MOCK_ROLE_COOKIE_NAME,
@@ -114,7 +114,9 @@ function setSessionCookies(
       session.tokens.refresh,
       {
         ...baseCookieOptions,
-        maxAge: 60 * 60 * 24,
+        maxAge: remember
+          ? rememberedSessionMaxAge
+          : 60 * 60 * 24,
       },
     );
 

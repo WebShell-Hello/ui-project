@@ -1,6 +1,6 @@
 "use client";
 
-import { type FormEvent, useEffect, useMemo, useState } from "react";
+import { type FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 
 import { ArrowLeft, FileQuestion, FolderPlus, Grid2X2, List, Trash2, Upload } from "lucide-react";
@@ -29,12 +29,12 @@ import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/
 import { Field, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+import { persistLocalData } from "@/lib/persist-local-data.client";
 
 import {
   type FileManagerFile,
   type FileManagerFolder,
   type FileManagerView,
-  files,
   folders,
   unclassifiedFolderId,
 } from "./data";
@@ -45,7 +45,6 @@ import { FoldersSection } from "./folders-section";
 
 const storageKey = "studio-admin-document-manager-preferences";
 const defaultFolderIds = new Set(folders.map((folder) => folder.id));
-const defaultFileFolders = new Map(files.map((file) => [file.id, file.folderId]));
 
 interface DocumentManagerPreferences {
   customFolders: FileManagerFolder[];
@@ -54,8 +53,11 @@ interface DocumentManagerPreferences {
 }
 
 interface DocumentsManagerProps {
+  initialFiles: FileManagerFile[];
+  initialFolders: FileManagerFolder[];
   initialFolderId?: string;
   initialView: FileManagerView;
+  hasPersistedState: boolean;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -109,80 +111,87 @@ function readPreferences(): DocumentManagerPreferences | null {
   }
 }
 
-export function DocumentsManager({ initialFolderId, initialView }: DocumentsManagerProps) {
+function withFileCounts(managedFolders: FileManagerFolder[], managedFiles: FileManagerFile[]) {
+  return managedFolders.map((folder) => ({
+    ...folder,
+    fileCount: managedFiles.filter((file) => file.folderId === folder.id).length,
+  }));
+}
+
+export function DocumentsManager({
+  initialFiles,
+  initialFolders,
+  initialFolderId,
+  initialView,
+  hasPersistedState,
+}: DocumentsManagerProps) {
   const router = useRouter();
-  const [managedFolders, setManagedFolders] = useState<FileManagerFolder[]>(folders);
-  const [managedFiles, setManagedFiles] = useState<FileManagerFile[]>(files);
+  const [managedFolders, setManagedFolders] = useState<FileManagerFolder[]>(initialFolders);
+  const [managedFiles, setManagedFiles] = useState<FileManagerFile[]>(initialFiles);
   const [selectedFileIds, setSelectedFileIds] = useState<Set<string>>(() => new Set());
-  const [preferencesLoaded, setPreferencesLoaded] = useState(false);
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [newFolderName, setNewFolderName] = useState("");
   const [folderNameError, setFolderNameError] = useState("");
   const [folderPendingDeletion, setFolderPendingDeletion] = useState<FileManagerFolder | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
+  const migrationAttempted = useRef(false);
 
   useEffect(() => {
-    const preferences = readPreferences();
-
-    if (preferences) {
-      const deletedIds = new Set(preferences.deletedFolderIds);
-      const nextFolders = [
-        ...folders.filter((folder) => !folder.deletable || !deletedIds.has(folder.id)),
-        ...preferences.customFolders.filter((folder) => !defaultFolderIds.has(folder.id)),
-      ];
-      const availableFolderIds = new Set(nextFolders.map((folder) => folder.id));
-      const nextFiles = files.map((file) => {
-        const preferredFolderId = preferences.fileFolderOverrides[file.id] ?? file.folderId;
-
-        return {
-          ...file,
-          folderId: availableFolderIds.has(preferredFolderId)
-            ? preferredFolderId
-            : unclassifiedFolderId,
-        };
-      });
-
-      setManagedFolders(nextFolders);
-      setManagedFiles(nextFiles);
-    }
-
-    setPreferencesLoaded(true);
-  }, []);
-
-  useEffect(() => {
-    if (!preferencesLoaded) {
+    if (hasPersistedState || migrationAttempted.current) {
       return;
     }
 
-    const currentFolderIds = new Set(managedFolders.map((folder) => folder.id));
-    const preferences: DocumentManagerPreferences = {
-      customFolders: managedFolders.filter((folder) => !defaultFolderIds.has(folder.id)),
-      deletedFolderIds: folders
-        .filter((folder) => folder.deletable && !currentFolderIds.has(folder.id))
-        .map((folder) => folder.id),
-      fileFolderOverrides: Object.fromEntries(
-        managedFiles
-          .filter((file) => defaultFileFolders.get(file.id) !== file.folderId)
-          .map((file) => [file.id, file.folderId]),
-      ),
-    };
+    migrationAttempted.current = true;
 
-    try {
-      window.localStorage.setItem(storageKey, JSON.stringify(preferences));
-    } catch {
-      toast.error("Document folder changes could not be saved in this browser.");
+    const preferences = readPreferences();
+
+    if (!preferences) {
+      return;
     }
-  }, [managedFiles, managedFolders, preferencesLoaded]);
+
+    const deletedIds = new Set(preferences.deletedFolderIds);
+    const nextFolders = [
+      ...initialFolders.filter((folder) => !folder.deletable || !deletedIds.has(folder.id)),
+      ...preferences.customFolders.filter((folder) => !defaultFolderIds.has(folder.id)),
+    ];
+    const availableFolderIds = new Set(nextFolders.map((folder) => folder.id));
+    const nextFiles = initialFiles.map((file) => {
+      const preferredFolderId = preferences.fileFolderOverrides[file.id] ?? file.folderId;
+
+      return {
+        ...file,
+        folderId: availableFolderIds.has(preferredFolderId) ? preferredFolderId : unclassifiedFolderId,
+      };
+    });
+    const countedFolders = withFileCounts(nextFolders, nextFiles);
+
+    setIsSaving(true);
+    void persistLocalData<{ folders: FileManagerFolder[]; files: FileManagerFile[] }>("/api/documents/state", {
+      version: 1,
+      legacyMigrationComplete: true,
+      folders: countedFolders,
+      files: nextFiles,
+    })
+      .then((savedState) => {
+        setManagedFolders(savedState.folders);
+        setManagedFiles(savedState.files);
+        window.localStorage.removeItem(storageKey);
+        toast.success("Existing document changes were migrated to the local data file.");
+      })
+      .catch((error: unknown) => {
+        toast.error(error instanceof Error ? error.message : "Unable to migrate the document data.");
+      })
+      .finally(() => {
+        setIsSaving(false);
+      });
+  }, [hasPersistedState, initialFiles, initialFolders]);
 
   useEffect(() => {
     setSelectedFileIds(new Set());
   }, [initialFolderId]);
 
   const folderSummaries = useMemo(
-    () =>
-      managedFolders.map((folder) => ({
-        ...folder,
-        fileCount: managedFiles.filter((file) => file.folderId === folder.id).length,
-      })),
+    () => withFileCounts(managedFolders, managedFiles),
     [managedFiles, managedFolders],
   );
   const activeFolder = folderSummaries.find((folder) => folder.id === initialFolderId);
@@ -227,32 +236,67 @@ export function DocumentsManager({ initialFolderId, initialView }: DocumentsMana
     setSelectedFileIds(new Set(activeFiles.map((file) => file.id)));
   }
 
-  function toggleStar(fileId: string) {
-    setManagedFiles((currentFiles) =>
-      currentFiles.map((file) =>
-        file.id === fileId ? { ...file, starred: !file.starred } : file,
-      ),
-    );
+  async function persistDocuments(nextFolders: FileManagerFolder[], nextFiles: FileManagerFile[]) {
+    const savedState = await persistLocalData<{
+      folders: FileManagerFolder[];
+      files: FileManagerFile[];
+    }>("/api/documents/state", {
+      version: 1,
+      legacyMigrationComplete: true,
+      folders: withFileCounts(nextFolders, nextFiles),
+      files: nextFiles,
+    });
+
+    setManagedFolders(savedState.folders);
+    setManagedFiles(savedState.files);
   }
 
-  function moveSelectedFiles(folderId: string) {
+  async function toggleStar(fileId: string) {
+    if (isSaving) {
+      return;
+    }
+
+    const nextFiles = managedFiles.map((file) =>
+      file.id === fileId ? { ...file, starred: !file.starred } : file,
+    );
+    setIsSaving(true);
+
+    try {
+      await persistDocuments(managedFolders, nextFiles);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Unable to save the document data file.");
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
+  async function moveSelectedFiles(folderId: string) {
     const targetFolder = folderSummaries.find((folder) => folder.id === folderId);
 
-    if (!targetFolder || selectedFileIds.size === 0) {
+    if (!targetFolder || selectedFileIds.size === 0 || isSaving) {
       return;
     }
 
     const movedCount = selectedFileIds.size;
-    setManagedFiles((currentFiles) =>
-      currentFiles.map((file) =>
-        selectedFileIds.has(file.id) ? { ...file, folderId } : file,
-      ),
+    const nextFiles = managedFiles.map((file) =>
+      selectedFileIds.has(file.id) ? { ...file, folderId } : file,
     );
+    setIsSaving(true);
+
+    try {
+      await persistDocuments(managedFolders, nextFiles);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Unable to save the document data file.");
+      return;
+    } finally {
+      setIsSaving(false);
+    }
+
     setSelectedFileIds(new Set());
     toast.success(`${movedCount} file${movedCount === 1 ? "" : "s"} moved to ${targetFolder.name}.`);
   }
 
-  function createFolder(event: FormEvent<HTMLFormElement>) {
+  async function createFolder(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const trimmedName = newFolderName.trim();
 
@@ -276,29 +320,46 @@ export function DocumentsManager({ initialFolderId, initialView }: DocumentsMana
       deletable: true,
     };
 
-    setManagedFolders((currentFolders) => [...currentFolders, folder]);
+    setIsSaving(true);
+
+    try {
+      await persistDocuments([...managedFolders, folder], managedFiles);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Unable to save the document data file.");
+      return;
+    } finally {
+      setIsSaving(false);
+    }
+
     setNewFolderName("");
     setFolderNameError("");
     setCreateDialogOpen(false);
     toast.success(`${folder.name} created.`);
   }
 
-  function deleteFolder() {
+  async function deleteFolder() {
     const folder = folderPendingDeletion;
 
-    if (!folder?.deletable) {
+    if (!folder?.deletable || isSaving) {
       return;
     }
 
     const movedFileCount = managedFiles.filter((file) => file.folderId === folder.id).length;
-    setManagedFolders((currentFolders) =>
-      currentFolders.filter((currentFolder) => currentFolder.id !== folder.id),
+    const nextFolders = managedFolders.filter((currentFolder) => currentFolder.id !== folder.id);
+    const nextFiles = managedFiles.map((file) =>
+      file.folderId === folder.id ? { ...file, folderId: unclassifiedFolderId } : file,
     );
-    setManagedFiles((currentFiles) =>
-      currentFiles.map((file) =>
-        file.folderId === folder.id ? { ...file, folderId: unclassifiedFolderId } : file,
-      ),
-    );
+    setIsSaving(true);
+
+    try {
+      await persistDocuments(nextFolders, nextFiles);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Unable to save the document data file.");
+      return;
+    } finally {
+      setIsSaving(false);
+    }
+
     setSelectedFileIds(new Set());
     toast.success(
       movedFileCount > 0
@@ -333,7 +394,11 @@ export function DocumentsManager({ initialFolderId, initialView }: DocumentsMana
                 All categories
               </Button>
               {activeFolder.deletable ? (
-                <Button variant="outline" onClick={() => setFolderPendingDeletion(activeFolder)}>
+                <Button
+                  variant="outline"
+                  disabled={isSaving}
+                  onClick={() => setFolderPendingDeletion(activeFolder)}
+                >
                   <Trash2 data-icon="inline-start" />
                   Delete folder
                 </Button>
@@ -344,7 +409,7 @@ export function DocumentsManager({ initialFolderId, initialView }: DocumentsMana
               </Button>
             </>
           ) : (
-            <Button onClick={() => setCreateDialogOpen(true)}>
+            <Button disabled={isSaving} onClick={() => setCreateDialogOpen(true)}>
               <FolderPlus data-icon="inline-start" />
               New folder
             </Button>
@@ -450,10 +515,17 @@ export function DocumentsManager({ initialFolderId, initialView }: DocumentsMana
               </Field>
             </FieldGroup>
             <DialogFooter>
-              <Button type="button" variant="outline" onClick={() => setCreateDialogOpen(false)}>
+              <Button
+                type="button"
+                variant="outline"
+                disabled={isSaving}
+                onClick={() => setCreateDialogOpen(false)}
+              >
                 Cancel
               </Button>
-              <Button type="submit">Create folder</Button>
+              <Button type="submit" disabled={isSaving}>
+                {isSaving ? "Saving..." : "Create folder"}
+              </Button>
             </DialogFooter>
           </form>
         </DialogContent>
@@ -475,9 +547,9 @@ export function DocumentsManager({ initialFolderId, initialView }: DocumentsMana
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction variant="destructive" onClick={deleteFolder}>
-              Delete folder
+            <AlertDialogCancel disabled={isSaving}>Cancel</AlertDialogCancel>
+            <AlertDialogAction variant="destructive" disabled={isSaving} onClick={deleteFolder}>
+              {isSaving ? "Deleting..." : "Delete folder"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

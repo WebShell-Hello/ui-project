@@ -46,7 +46,7 @@ interface DriverProfileDialogProps {
   mode: "add" | "edit";
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onSave: (driver: DriverRecord) => void;
+  onSave: (driver: DriverRecord) => Promise<boolean>;
 }
 
 interface FormSectionProps {
@@ -181,6 +181,7 @@ export function DriverProfileDialog({
   onSave,
 }: DriverProfileDialogProps) {
   const [draft, setDraft] = React.useState<DriverRecord | null>(driver);
+  const [isSaving, setIsSaving] = React.useState(false);
 
   React.useEffect(() => {
     setDraft(driver);
@@ -194,7 +195,7 @@ export function DriverProfileDialog({
     setDraft((current) => (current ? { ...current, [field]: value } : current));
   }
 
-  function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
+  async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
     if (!draft.firstName.trim() || !draft.lastName.trim() || !draft.phone.trim() || !draft.email.trim()) {
@@ -202,12 +203,21 @@ export function DriverProfileDialog({
       return;
     }
 
-    onSave({
-      ...draft,
-      updatedAt: new Date().toISOString(),
-      updatedBy: "Current user",
-    });
-    onOpenChange(false);
+    setIsSaving(true);
+
+    try {
+      const saved = await onSave({
+        ...draft,
+        updatedAt: new Date().toISOString(),
+        updatedBy: "Current user",
+      });
+
+      if (saved) {
+        onOpenChange(false);
+      }
+    } finally {
+      setIsSaving(false);
+    }
   }
 
   return (
@@ -397,10 +407,12 @@ export function DriverProfileDialog({
           </div>
 
           <DialogFooter className="m-0 shrink-0 px-5">
-            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+            <Button type="button" variant="outline" disabled={isSaving} onClick={() => onOpenChange(false)}>
               Cancel
             </Button>
-            <Button type="submit">{mode === "add" ? "Add driver" : "Save changes"}</Button>
+            <Button type="submit" disabled={isSaving}>
+              {isSaving ? "Saving..." : mode === "add" ? "Add driver" : "Save changes"}
+            </Button>
           </DialogFooter>
         </form>
       </DialogContent>

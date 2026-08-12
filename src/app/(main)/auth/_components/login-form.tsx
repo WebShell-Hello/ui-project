@@ -197,7 +197,7 @@ export function LoginForm() {
                   htmlFor="login-remember"
                   className="font-normal"
                 >
-                  Remember me
+                  Remember me for 7 days
                 </FieldLabel>
 
                 {fieldState.invalid && (

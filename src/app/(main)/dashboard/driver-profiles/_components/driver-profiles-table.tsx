@@ -42,11 +42,11 @@ import { Input } from "@/components/ui/input";
 import { InputGroup, InputGroupAddon, InputGroupInput } from "@/components/ui/input-group";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { persistLocalData } from "@/lib/persist-local-data.client";
 
 import {
   createEmptyDriver,
   type DriverRecord,
-  driverTestData,
   getDriverDisplayName,
 } from "./driver-data";
 import { DriverProfileDialog } from "./driver-profile-dialog";
@@ -117,8 +117,12 @@ function matchesSearch(driver: DriverRecord, normalizedQuery: string) {
   ].some((value) => value.toLowerCase().includes(normalizedQuery));
 }
 
-export function DriverProfilesTable() {
-  const [drivers, setDrivers] = React.useState<DriverRecord[]>(driverTestData);
+interface DriverProfilesTableProps {
+  initialDrivers: DriverRecord[];
+}
+
+export function DriverProfilesTable({ initialDrivers }: DriverProfilesTableProps) {
+  const [drivers, setDrivers] = React.useState<DriverRecord[]>(initialDrivers);
   const [view, setView] = React.useState<DriverView>("active");
   const [searchQuery, setSearchQuery] = React.useState("");
   const [selectedIds, setSelectedIds] = React.useState<Set<string>>(() => new Set());
@@ -128,6 +132,7 @@ export function DriverProfilesTable() {
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = React.useState(false);
   const [pageSize, setPageSize] = React.useState(10);
   const [pageIndex, setPageIndex] = React.useState(0);
+  const [isSaving, setIsSaving] = React.useState(false);
   const importInputRef = React.useRef<HTMLInputElement>(null);
 
   const normalizedQuery = searchQuery.trim().toLowerCase();
@@ -162,15 +167,34 @@ export function DriverProfilesTable() {
     setIsProfileDialogOpen(true);
   }
 
-  function saveDriver(driver: DriverRecord) {
-    if (dialogMode === "add") {
-      setDrivers((current) => [driver, ...current]);
-      toast.success(`${getDriverDisplayName(driver)} was added to this mock view.`);
-      return;
-    }
+  async function persistDrivers(nextDrivers: DriverRecord[]) {
+    const result = await persistLocalData<{ drivers: DriverRecord[] }>("/api/driver-profiles", {
+      version: 1,
+      drivers: nextDrivers,
+    });
+    setDrivers(result.drivers);
+  }
 
-    setDrivers((current) => current.map((item) => (item.id === driver.id ? driver : item)));
-    toast.success(`${getDriverDisplayName(driver)} was updated in this mock view.`);
+  async function saveDriver(driver: DriverRecord) {
+    const nextDrivers =
+      dialogMode === "add"
+        ? [driver, ...drivers]
+        : drivers.map((item) => (item.id === driver.id ? driver : item));
+
+    setIsSaving(true);
+
+    try {
+      await persistDrivers(nextDrivers);
+      toast.success(
+        `${getDriverDisplayName(driver)} was ${dialogMode === "add" ? "added" : "updated"} and saved locally.`,
+      );
+      return true;
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Unable to save the driver data file.");
+      return false;
+    } finally {
+      setIsSaving(false);
+    }
   }
 
   function togglePageSelection(checked: boolean | "indeterminate") {
@@ -203,51 +227,73 @@ export function DriverProfilesTable() {
     });
   }
 
-  function deleteSelectedDrivers() {
+  async function deleteSelectedDrivers() {
     const deletedCount = selectedIds.size;
+    let nextDrivers: DriverRecord[];
 
     if (view === "deleted") {
-      setDrivers((current) => current.filter((driver) => !selectedIds.has(driver.id)));
-      toast.success(`${deletedCount} driver${deletedCount === 1 ? "" : "s"} permanently deleted.`);
+      nextDrivers = drivers.filter((driver) => !selectedIds.has(driver.id));
     } else {
       const deletedAt = new Date().toISOString();
 
-      setDrivers((current) =>
-        current.map((driver) =>
-          selectedIds.has(driver.id)
-            ? {
-                ...driver,
-                deletedAt,
-                deletedBy: "Current user",
-                updatedAt: deletedAt,
-                updatedBy: "Current user",
-              }
-            : driver,
-        ),
+      nextDrivers = drivers.map((driver) =>
+        selectedIds.has(driver.id)
+          ? {
+              ...driver,
+              deletedAt,
+              deletedBy: "Current user",
+              updatedAt: deletedAt,
+              updatedBy: "Current user",
+            }
+          : driver,
       );
-      toast.success(`${deletedCount} driver${deletedCount === 1 ? "" : "s"} moved to Deleted.`);
+    }
+
+    setIsSaving(true);
+
+    try {
+      await persistDrivers(nextDrivers);
+      toast.success(
+        view === "deleted"
+          ? `${deletedCount} driver${deletedCount === 1 ? "" : "s"} permanently deleted.`
+          : `${deletedCount} driver${deletedCount === 1 ? "" : "s"} moved to Deleted.`,
+      );
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Unable to save the driver data file.");
+      return;
+    } finally {
+      setIsSaving(false);
     }
 
     setSelectedIds(new Set());
     setPageIndex(0);
   }
 
-  function restoreDrivers(driverIds: Set<string>) {
+  async function restoreDrivers(driverIds: Set<string>) {
     const restoredCount = driverIds.size;
 
-    setDrivers((current) =>
-      current.map((driver) =>
-        driverIds.has(driver.id)
-          ? {
-              ...driver,
-              deletedAt: null,
-              deletedBy: "",
-              updatedAt: new Date().toISOString(),
-              updatedBy: "Current user",
-            }
-          : driver,
-      ),
+    const nextDrivers = drivers.map((driver) =>
+      driverIds.has(driver.id)
+        ? {
+            ...driver,
+            deletedAt: null,
+            deletedBy: "",
+            updatedAt: new Date().toISOString(),
+            updatedBy: "Current user",
+          }
+        : driver,
     );
+
+    setIsSaving(true);
+
+    try {
+      await persistDrivers(nextDrivers);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Unable to save the driver data file.");
+      return;
+    } finally {
+      setIsSaving(false);
+    }
     setSelectedIds(new Set());
     setPageIndex(0);
     toast.success(`${restoredCount} driver${restoredCount === 1 ? "" : "s"} restored.`);
@@ -327,7 +373,7 @@ export function DriverProfilesTable() {
           </DropdownMenu>
 
           {view === "active" ? (
-            <Button type="button" onClick={openAddDialog}>
+            <Button type="button" disabled={isSaving} onClick={openAddDialog}>
               <Plus data-icon="inline-start" />
               Add
             </Button>
@@ -335,7 +381,7 @@ export function DriverProfilesTable() {
             <Button
               type="button"
               variant="outline"
-              disabled={selectedIds.size === 0}
+              disabled={selectedIds.size === 0 || isSaving}
               onClick={() => restoreDrivers(selectedIds)}
             >
               <Undo2 data-icon="inline-start" />
@@ -345,7 +391,7 @@ export function DriverProfilesTable() {
           <Button
             type="button"
             variant="destructive"
-            disabled={selectedIds.size === 0}
+            disabled={selectedIds.size === 0 || isSaving}
             onClick={() => setIsDeleteDialogOpen(true)}
           >
             <Trash2 data-icon="inline-start" />
@@ -585,7 +631,7 @@ export function DriverProfilesTable() {
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction variant="destructive" onClick={deleteSelectedDrivers}>
+            <AlertDialogAction variant="destructive" disabled={isSaving} onClick={deleteSelectedDrivers}>
               {view === "deleted" ? "Delete permanently" : "Move to Deleted"}
             </AlertDialogAction>
           </AlertDialogFooter>

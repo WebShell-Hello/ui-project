@@ -50,12 +50,12 @@ import {
 } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { persistLocalData } from "@/lib/persist-local-data.client";
 
 import {
   type OwnershipType,
   type VanRecord,
   type VanStatus,
-  vanTestData,
 } from "./van-data";
 import { ExpiryBadge, formatVanDate, getExpiryState } from "./van-expiry";
 import { VanProfileDialog } from "./van-profile-dialog";
@@ -76,8 +76,12 @@ const statusLabels: Record<VanStatus, string> = {
   returned: "Returned",
 };
 
-export function VanManagementTable() {
-  const [vans, setVans] = React.useState(vanTestData);
+interface VanManagementTableProps {
+  initialVans: VanRecord[];
+}
+
+export function VanManagementTable({ initialVans }: VanManagementTableProps) {
+  const [vans, setVans] = React.useState(initialVans);
   const [view, setView] = React.useState<VanView>("active");
   const [searchQuery, setSearchQuery] = React.useState("");
   const [statusFilter, setStatusFilter] = React.useState<StatusFilter>("all");
@@ -89,6 +93,7 @@ export function VanManagementTable() {
     () => new Set<string>(),
   );
   const [pendingDeletion, setPendingDeletion] = React.useState<PendingDeletion | null>(null);
+  const [isSaving, setIsSaving] = React.useState(false);
 
   const filteredVans = React.useMemo(() => {
     const normalizedQuery = searchQuery.trim().toLowerCase();
@@ -165,15 +170,33 @@ export function VanManagementTable() {
     });
   }
 
-  function restoreVans(ids: readonly string[]) {
+  async function saveVans(nextVans: VanRecord[]) {
+    const result = await persistLocalData<{ vans: VanRecord[] }>("/api/vans", {
+      version: 1,
+      vans: nextVans,
+    });
+    setVans(result.vans);
+  }
+
+  async function restoreVans(ids: readonly string[]) {
     const restoredIds = new Set(ids);
-    setVans((currentVans) =>
-      currentVans.map((candidate) =>
-        restoredIds.has(candidate.id)
-          ? { ...candidate, archivedAt: null, archivedBy: null, updatedAt: new Date().toISOString() }
-          : candidate,
-      ),
+    const nextVans = vans.map((candidate) =>
+      restoredIds.has(candidate.id)
+        ? { ...candidate, archivedAt: null, archivedBy: null, updatedAt: new Date().toISOString() }
+        : candidate,
     );
+
+    setIsSaving(true);
+
+    try {
+      await saveVans(nextVans);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Unable to save the van data file.");
+      return;
+    } finally {
+      setIsSaving(false);
+    }
+
     setSelectedVanIds((currentIds) => {
       const nextIds = new Set(currentIds);
       for (const id of ids) nextIds.delete(id);
@@ -183,23 +206,18 @@ export function VanManagementTable() {
     setPageIndex(0);
   }
 
-  function deleteVans() {
-    if (!pendingDeletion) return;
+  async function deleteVans() {
+    if (!pendingDeletion || isSaving) return;
 
     const deletionIds = new Set(pendingDeletion.ids);
+    let nextVans: VanRecord[];
 
     if (pendingDeletion.permanent) {
-      setVans((currentVans) => currentVans.filter((van) => !deletionIds.has(van.id)));
-      toast.success(
-        pendingDeletion.ids.length === 1
-          ? "The van was permanently deleted."
-          : `${pendingDeletion.ids.length} vans were permanently deleted.`,
-      );
+      nextVans = vans.filter((van) => !deletionIds.has(van.id));
     } else {
       const timestamp = new Date().toISOString();
 
-      setVans((currentVans) =>
-        currentVans.map((van) =>
+      nextVans = vans.map((van) =>
           deletionIds.has(van.id)
             ? {
                 ...van,
@@ -209,13 +227,27 @@ export function VanManagementTable() {
                 updatedBy: "Current user",
               }
             : van,
-        ),
       );
+    }
+
+    setIsSaving(true);
+
+    try {
+      await saveVans(nextVans);
       toast.success(
-        pendingDeletion.ids.length === 1
-          ? "The van was moved to Deleted."
-          : `${pendingDeletion.ids.length} vans were moved to Deleted.`,
+        pendingDeletion.permanent
+          ? pendingDeletion.ids.length === 1
+            ? "The van was permanently deleted."
+            : `${pendingDeletion.ids.length} vans were permanently deleted.`
+          : pendingDeletion.ids.length === 1
+            ? "The van was moved to Deleted."
+            : `${pendingDeletion.ids.length} vans were moved to Deleted.`,
       );
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Unable to save the van data file.");
+      return;
+    } finally {
+      setIsSaving(false);
     }
 
     setSelectedVanIds((currentIds) => {
@@ -569,7 +601,7 @@ export function VanManagementTable() {
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction variant="destructive" onClick={deleteVans}>
+            <AlertDialogAction variant="destructive" disabled={isSaving} onClick={deleteVans}>
               <Trash2 data-icon="inline-start" />
               {pendingDeletion?.permanent ? "Delete permanently" : "Delete selected"}
             </AlertDialogAction>
